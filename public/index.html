@@ -1,0 +1,225 @@
+<html>
+  <head>
+<style>
+body {
+  font-family: helvetica;
+}
+a {
+  margin-right: 10px;
+  padding: 5px;
+  border: solid 1px dodgerBlue;
+  border-radius: 3px;
+  text-decoration: none;
+  color: dodgerBlue;
+}
+
+a.active {
+  background-color: dodgerBlue;
+  color: white;
+}
+
+form {
+  padding: 2em;
+  border: solid 1px dodgerBlue;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  height: 200px;
+}
+
+input,button {
+  height: 3em;
+}
+
+div#content{
+  margin-top: 3em;
+}
+
+#products li {
+  display: flex;
+  border: solid 1px dodgerBlue;
+  border-width: 1px 0;
+  padding: 1em;
+}
+
+#products li div{
+  flex: 1;
+}
+
+</style>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/axios/0.18.0/axios.js'></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <script src="https://unpkg.com/react@16/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@16/umd/react-dom.development.js" crossorigin></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/react-router-dom/5.0.0/react-router-dom.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/redux/4.0.1/redux.js'></script>
+  </head>
+  <body>
+    <div id='root'></div>
+    <script type='text/babel'>
+      const { HashRouter, Route, Link } = ReactRouterDOM;
+      
+      const store = Redux.createStore((state = [], action)=>{
+	// This is the reducer // Just a reminder to myself
+	switch(action.type){
+	case 'CREATE_PRODUCT':
+	  return state = [...state, ...action.products];
+	case 'DESTROY_PRODUCT':
+	  return state = state.filter((p)=> p.id !== action.product.id);
+	}
+
+	// Maybe a catchall
+	// You need this for the default state = [] to actually take
+	// Otherwise will state will be undefined... Lesson learned
+	return state;
+      });
+
+      // Seriously battled myself mentaly if getProducts and createProduct are to similar
+      // and if I should merge them into one function. Decided against for now...
+      // Just letting you know the thought crossed my mind.
+      const getProducts = function() {
+	axios.get('/api/products')
+	  .then((response)=>{store.dispatch({ type: 'CREATE_PRODUCT', products: response.data})})
+	  .catch((ex)=>{ console.log("I broke something somehow... In getProducts")});
+      }
+
+      const createProduct = function(product) {
+	axios.post('/api/products', product)
+	  .then((response)=>{
+	    store.dispatch({ type: 'CREATE_PRODUCT', products: [response.data] });
+            location.hash = '/products'
+	  }).catch((ex)=>{ console.log("I broke something somehow... In createProduct")});
+      }
+
+      const destroyProduct = function(product) {
+        axios.delete(`/api/products/${product.id}`)
+	  .then(()=>{
+	    store.dispatch({ type: 'DESTROY_PRODUCT', product: product });
+	  }).catch((ex)=>{ console.log("I broke something somehow... In deleteProduct")});
+      }
+
+      const Home = ()=> <h2>Home</h2>;
+
+      class Nav extends React.Component {
+	constructor(){
+	  super();
+	  this.state = {
+	    length: store.getState().length
+	  }
+	}
+
+	componentDidMount() {
+	  this.unsubscribe = store.subscribe((state)=> {
+	    this.setState({length: store.getState().length})});	  
+	}
+
+	// Even though technically this should not happen
+	// I consider this safety in case something changed where
+	// the componend does get unmounted
+	componentWillUnmount() {
+	  this.unsubscribe();
+	}
+
+	render() {
+          const links = [
+            { text: 'Home', to: '/'},
+            { text: `Products (${ this.state.length })`, to: '/products' },
+            { text: 'Create A Product', to: '/products/create' },
+          ];
+          return (
+              <div id='nav'>
+              {
+		links.map( (link, idx) => <Link key={ idx } to={ link.to } className={ location.hash === link.to ? 'active': ''}>{ link.text }</Link>)
+              }
+            </div>
+	  );
+	}
+      }
+      
+      class Products extends React.Component {
+        constructor(){
+          super();
+          this.state = {
+	    products: store.getState()
+          };
+	}
+
+        async componentDidMount(){
+	  this.unsubscribe = store.subscribe((state)=> {this.setState({products: store.getState()})});
+        }
+
+	componentWillUnmount() {
+	  this.unsubscribe();
+	}
+
+	render() {
+	  const {products} = this.state;
+          return (
+              <div>
+              <h2>Products</h2>
+              <ul id='products'>
+              {
+                products.map( product => (
+                    <li key={ product.id }>
+                    <div>{ product.name }</div>
+                    <button onClick={ ()=> destroyProduct(product)}>Destroy</button>
+                    </li>
+                ))
+              }
+            </ul>
+              </div>
+          );
+	}
+      };
+
+      class ProductCreate extends React.Component{
+        constructor(){
+          super();
+          this.state = {
+            name: ''
+          };
+          this.onChange = this.onChange.bind(this);
+          this.onSubmit = this.onSubmit.bind(this);
+        }
+        onChange(ev){
+          this.setState({ [ev.target.name]: ev.target.value });
+        }
+        onSubmit(ev){
+          ev.preventDefault();
+          this.props.create(this.state, this.props.history)
+        }
+        render(){
+          const { name } = this.state;
+          const { onSubmit, onChange } = this;
+          return (
+            <div>
+              <h2>Create A Product</h2>
+              <input name='name' onChange={ onChange } value={ name } placeholder='enter a new product'/>
+	      <br/>
+              <button onClick={ ()=> createProduct(this.state)} submit='false' disabled={!name}>Save</button>
+            </div>
+
+          );
+        }
+      }
+
+      const App = ()=> {
+	getProducts();
+        return (
+            <HashRouter>
+              <h1>Acme Products</h1>
+              <Nav />
+              <div id='content'>
+                <Route exact path='/' component={ Home } />
+                <Route path='/products' exact component={ Products } />
+                <Route path='/products/create' component={ProductCreate} />
+              </div>
+            </HashRouter>
+        );
+      }
+
+      const root = document.querySelector('#root');
+      ReactDOM.render(<App />, root);
+    </script>
+  </body>
+</html>
